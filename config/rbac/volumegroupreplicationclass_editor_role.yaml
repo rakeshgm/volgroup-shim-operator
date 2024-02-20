@@ -1,0 +1,24 @@
+# permissions for end users to edit volumegroupreplicationclasses.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: volumegroupreplicationclass-editor-role
+rules:
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplicationclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplicationclasses/status
+  verbs:
+  - get

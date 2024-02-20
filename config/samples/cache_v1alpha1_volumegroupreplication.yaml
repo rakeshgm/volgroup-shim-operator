@@ -1,0 +1,6 @@
+apiVersion: cache.storage.ramendr.io/v1alpha1
+kind: VolumeGroupReplication
+metadata:
+  name: volumegroupreplication-sample
+spec:
+  # TODO(user): Add fields here

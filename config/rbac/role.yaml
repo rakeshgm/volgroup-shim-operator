@@ -1,0 +1,59 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplicationclasses
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplicationclasses/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplicationclasses/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplications
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplications/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cache.storage.ramendr.io
+  resources:
+  - volumegroupreplications/status
+  verbs:
+  - get
+  - patch
+  - update
