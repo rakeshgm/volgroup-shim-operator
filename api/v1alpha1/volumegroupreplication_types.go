@@ -20,17 +20,32 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// ReplicationState represents the replication operations to be performed on the volume
+type ReplicationState string
+
+const (
+	// Promote the protected PVCs to primary
+	Primary ReplicationState = "primary"
+
+	// Demote the proteced PVCs to secondary
+	Secondary ReplicationState = "secondary"
+)
+
 type State string
 
 const (
 	PrimaryState   State = "Primary"
 	SecondaryState State = "Secondary"
-	UnknownState   State = "UnknownState"
+	UnknownState   State = "Unknown"
 )
 
 // VolumeGroupReplicationSpec defines the desired state of VolumeGroupReplication
 type VolumeGroupReplicationSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// Desired state of all volumes [primary or secondary] in this replication group;
+	// this value is propagated to children VolumeReplication CRs
+	ReplicationState ReplicationState `json:"replicationState"`
 
 	// VolumeGroupReplicationClass may be left nil to indicate that
 	// the default class will be used.

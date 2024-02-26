@@ -36,6 +36,11 @@ spec:
           spec:
             description: VolumeGroupReplicationSpec defines the desired state of VolumeGroupReplication
             properties:
+              replicationState:
+                description: Desired state of all volumes [primary or secondary] in
+                  this replication group; this value is propagated to children VolumeReplication
+                  CRs
+                type: string
               selector:
                 description: A label query over persistent volume claims to be grouped
                   together for replication. This labelSelector will be used to match
@@ -88,6 +93,7 @@ spec:
                   that the default class will be used.
                 type: string
             required:
+            - replicationState
             - selector
             - volumeGroupReplicationClass
             type: object
