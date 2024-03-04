@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -100,6 +101,18 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
+	err = r.validatePVClabels(v.instance, log)
+	if err != nil {
+		setFailureCondition(v.instance)
+
+		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		if uErr != nil {
+			log.Error(uErr, "failed to update validatePVClabels status", "VRName", v.instance.Name)
+		}
+
+		return ctrl.Result{}, nil
+	}
+
 	v.instance.Status.LastCompletionTime = getCurrentTime()
 	volState := getGroupReplicationState(v.instance)
 
@@ -146,6 +159,61 @@ type VGRInstance struct {
 	savedInstanceStatus cachev1alpha1.VolumeGroupReplicationStatus
 	namespacedName      string
 	result              ctrl.Result
+}
+
+// VolumeGroupReplicationReconciler get volume replication class object from the subjected namespace and return the same.
+func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger logr.Logger,
+	req types.NamespacedName) (*cachev1alpha1.VolumeGroupReplicationClass, error) {
+	vrcObj := &cachev1alpha1.VolumeGroupReplicationClass{}
+
+	err := r.Client.Get(context.TODO(), req, vrcObj)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logger.Error(err, "VolumeGroupReplicationClass not found", "VolumeGroupReplicationClass", req.Name)
+		} else {
+			logger.Error(err, "Got an unexpected error while fetching VolumeGroupReplicationClass", "VolumeGroupReplicationClass", req.Name)
+		}
+
+		return nil, err
+	}
+
+	return vrcObj, nil
+}
+
+func (r *VolumeGroupReplicationReconciler) validatePVClabels(
+	instance *cachev1alpha1.VolumeGroupReplication,
+	logger logr.Logger,
+) error {
+	pvcLabelSelector := instance.Spec.Selector
+
+	pvcSelector, err := metav1.LabelSelectorAsSelector(pvcLabelSelector)
+	if err != nil {
+		logger.Error(err, "error with PVC label selector", "pvcSelector", pvcLabelSelector)
+
+		return fmt.Errorf("error with PVC label selector, %w", err)
+	}
+	logger.Info("Fetching PersistentVolumeClaims", "pvcSelector", pvcLabelSelector)
+
+	listOptions := []client.ListOption{
+		client.MatchingLabelsSelector{
+			Selector: pvcSelector,
+		},
+	}
+
+	pvcList := &corev1.PersistentVolumeClaimList{}
+	if err := r.Client.List(context.TODO(), pvcList, listOptions...); err != nil {
+		logger.Error(err, "failed to list PersistentVolumeClaims", "pvcSelector", pvcLabelSelector)
+
+		return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
+	}
+
+	logger.Info(fmt.Sprintf("Found %d PVCs using label selector %v", len(pvcList.Items), pvcLabelSelector))
+
+	for idx := range pvcList.Items {
+		logger.Info("PVC", "name", pvcList.Items[idx].Name, "namespace", pvcList.Items[idx].Namespace)
+	}
+
+	return nil
 }
 
 func setFailureCondition(instance *cachev1alpha1.VolumeGroupReplication) {
