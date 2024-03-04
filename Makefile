@@ -29,7 +29,11 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # storage.ramendr.io/volgroup-shim-operator-bundle:$VERSION and storage.ramendr.io/volgroup-shim-operator-catalog:$VERSION.
-IMAGE_TAG_BASE ?= storage.ramendr.io/volgroup-shim-operator
+IMAGE_REGISTRY ?= quay.io
+IMAGE_REPOSITORY ?= ramendr
+IMAGE_NAME ?= volgroup-shim
+IMAGE_TAG ?= latest
+IMAGE_TAG_BASE = $(IMAGE_REGISTRY)/$(IMAGE_REPOSITORY)/$(IMAGE_NAME)
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -47,6 +51,7 @@ ifeq ($(USE_IMAGE_DIGESTS), true)
 endif
 
 # Image URL to use all building/pushing image targets
+IMG ?= $(IMAGE_TAG_BASE)-operator:$(IMAGE_TAG)
 IMG ?= controller:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.24.2
@@ -62,6 +67,8 @@ endif
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
+
+DOCKERCMD ?= podman
 
 .PHONY: all
 all: build
@@ -117,11 +124,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: test ## Build docker image with the manager.
-	docker build -t ${IMG} .
+	$(DOCKERCMD) build -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	docker push ${IMG}
+	$(DOCKERCMD) push ${IMG}
 
 ##@ Deployment
 
