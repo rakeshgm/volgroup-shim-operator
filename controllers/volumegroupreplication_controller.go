@@ -85,7 +85,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// Get VolumeGroupReplicationClass
-	_, err := r.getVolumeGroupReplicationClass(log, types.NamespacedName{
+	_, err := v.getVolumeGroupReplicationClass(log, types.NamespacedName{
 		Name:      v.instance.Spec.VolumeGroupReplicationClass,
 		Namespace: req.Namespace,
 	})
@@ -95,6 +95,18 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
 		if uErr != nil {
 			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	err = v.validatePVClabels()
+	if err != nil {
+		setFailureCondition(v.instance)
+
+		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		if uErr != nil {
+			log.Error(uErr, "failed to update validatePVClabels status", "VRName", v.instance.Name)
 		}
 
 		return ctrl.Result{}, nil
@@ -136,16 +148,6 @@ func (r *VolumeGroupReplicationReconciler) updateGroupReplicationStatus(
 	}
 
 	return nil
-}
-
-type VGRInstance struct {
-	reconciler          *VolumeGroupReplicationReconciler
-	ctx                 context.Context
-	log                 logr.Logger
-	instance            *cachev1alpha1.VolumeGroupReplication
-	savedInstanceStatus cachev1alpha1.VolumeGroupReplicationStatus
-	namespacedName      string
-	result              ctrl.Result
 }
 
 func setFailureCondition(instance *cachev1alpha1.VolumeGroupReplication) {
