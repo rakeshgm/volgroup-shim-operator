@@ -119,6 +119,19 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	msg := fmt.Sprintf("volume is marked %s", string(volState))
 	log.Info(msg)
 
+	switch v.instance.Spec.ReplicationState {
+	case cachev1alpha1.Primary:
+		err = r.markVolumeAsPrimary(v.instance, log)
+	case cachev1alpha1.Secondary:
+		err = r.markVolumeAsSecondary(v.instance, log)
+	}
+
+	if err != nil {
+		log.Error(err, "failed to mark volume as primary/secondary", "VRName", v.instance.Name)
+
+		return ctrl.Result{}, nil
+	}
+
 	err = r.updateGroupReplicationStatus(v.instance, log, volState, msg)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -178,6 +191,26 @@ func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger
 	}
 
 	return vrcObj, nil
+}
+
+func (r *VolumeGroupReplicationReconciler) markVolumeAsPrimary(
+	instance *cachev1alpha1.VolumeGroupReplication,
+	logger logr.Logger,
+) error {
+	logger.Info("Promoting volume group")
+	setPromotedCondition(&instance.Status.Conditions, instance.Generation)
+
+	return nil
+}
+
+func (r *VolumeGroupReplicationReconciler) markVolumeAsSecondary(
+	instance *cachev1alpha1.VolumeGroupReplication,
+	logger logr.Logger,
+) error {
+	logger.Info("Demoting volume group")
+	setDemotedCondition(&instance.Status.Conditions, instance.Generation)
+
+	return nil
 }
 
 func (r *VolumeGroupReplicationReconciler) validatePVClabels(

@@ -25,6 +25,7 @@ import (
 const (
 	ConditionCompleted = "Completed"
 	ConditionDegraded  = "Degraded"
+	ConditionResyncing = "Resyncing"
 )
 
 const (
@@ -102,5 +103,49 @@ func setFailedDemotionCondition(conditions *[]metav1.Condition, observedGenerati
 		Reason:             Error,
 		ObservedGeneration: observedGeneration,
 		Status:             metav1.ConditionTrue,
+	})
+}
+
+// sets conditions when volume was promoted successfully.
+func setPromotedCondition(conditions *[]metav1.Condition, observedGeneration int64) {
+	setStatusCondition(conditions, &metav1.Condition{
+		Type:               ConditionCompleted,
+		Reason:             Promoted,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+	})
+	setStatusCondition(conditions, &metav1.Condition{
+		Type:               ConditionDegraded,
+		Reason:             Healthy,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+	})
+	setStatusCondition(conditions, &metav1.Condition{
+		Type:               ConditionResyncing,
+		Reason:             NotResyncing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
+	})
+}
+
+// sets conditions when volume was demoted successfully.
+func setDemotedCondition(conditions *[]metav1.Condition, observedGeneration int64) {
+	setStatusCondition(conditions, &metav1.Condition{
+		Type:               ConditionCompleted,
+		Reason:             Demoted,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+	})
+	setStatusCondition(conditions, &metav1.Condition{
+		Type:               ConditionDegraded,
+		Reason:             VolumeDegraded,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionTrue,
+	})
+	setStatusCondition(conditions, &metav1.Condition{
+		Type:               ConditionResyncing,
+		Reason:             NotResyncing,
+		ObservedGeneration: observedGeneration,
+		Status:             metav1.ConditionFalse,
 	})
 }
