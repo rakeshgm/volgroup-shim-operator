@@ -32,8 +32,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	cachev1alpha1 "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 )
+
+const storageProvisioner = "rook-ceph.rbd.csi.ceph.com"
 
 // VolumeGroupReplicationReconciler reconciles a VolumeGroupReplication object
 type VolumeGroupReplicationReconciler struct {
@@ -86,7 +89,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// Get VolumeGroupReplicationClass
-	_, err := r.getVolumeGroupReplicationClass(log, types.NamespacedName{
+	volGrouReplClass, err := r.getVolumeGroupReplicationClass(log, types.NamespacedName{
 		Name:      v.instance.Spec.VolumeGroupReplicationClass,
 		Namespace: req.Namespace,
 	})
@@ -100,6 +103,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 
 		return ctrl.Result{}, nil
 	}
+	v.volGroupReplicationClass = volGrouReplClass
 
 	err = r.validatePVClabels(v.instance, log)
 	if err != nil {
@@ -112,6 +116,21 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 
 		return ctrl.Result{}, nil
 	}
+
+	volRepClass, err := v.selectVolumeReplicationClass()
+
+	if err != nil {
+		setFailureCondition(v.instance)
+
+		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		if uErr != nil {
+			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	log.Info("found", "volRepClass", volRepClass.Name)
 
 	v.instance.Status.LastCompletionTime = getCurrentTime()
 	volState := getGroupReplicationState(v.instance)
@@ -152,13 +171,14 @@ func (r *VolumeGroupReplicationReconciler) updateGroupReplicationStatus(
 }
 
 type VGRInstance struct {
-	reconciler          *VolumeGroupReplicationReconciler
-	ctx                 context.Context
-	log                 logr.Logger
-	instance            *cachev1alpha1.VolumeGroupReplication
-	savedInstanceStatus cachev1alpha1.VolumeGroupReplicationStatus
-	namespacedName      string
-	result              ctrl.Result
+	reconciler               *VolumeGroupReplicationReconciler
+	ctx                      context.Context
+	log                      logr.Logger
+	instance                 *cachev1alpha1.VolumeGroupReplication
+	savedInstanceStatus      cachev1alpha1.VolumeGroupReplicationStatus
+	volGroupReplicationClass *cachev1alpha1.VolumeGroupReplicationClass
+	namespacedName           string
+	result                   ctrl.Result
 }
 
 // VolumeGroupReplicationReconciler get volume replication class object from the subjected namespace and return the same.
@@ -214,6 +234,59 @@ func (r *VolumeGroupReplicationReconciler) validatePVClabels(
 	}
 
 	return nil
+}
+
+func (v *VGRInstance) listVolRepClasses() (*volrep.VolumeReplicationClassList, error) {
+
+	replClassList := &volrep.VolumeReplicationClassList{}
+
+	if err := v.reconciler.List(context.TODO(), replClassList); err != nil {
+		v.log.Error(err, "Failed to list Replication Classes")
+
+		return nil, fmt.Errorf("failed to list Replication Classes (%w)", err)
+	}
+
+	return replClassList, nil
+
+}
+
+func (v *VGRInstance) selectVolumeReplicationClass() (*volrep.VolumeReplicationClass, error) {
+
+	schedulingIntervalFromVGRClass := v.volGroupReplicationClass.Spec.Parameters["schedulingInterval"]
+
+	replClassList, err := v.listVolRepClasses()
+	if err != nil {
+		v.log.Info("unable to list volRepClasses")
+
+		return nil, err
+	}
+
+	for index := range replClassList.Items {
+		replicationClass := &replClassList.Items[index]
+
+		if storageProvisioner != replicationClass.Spec.Provisioner {
+			continue
+		}
+
+		schedulingInterval, found := replicationClass.Spec.Parameters["schedulingInterval"]
+		if !found {
+			// schedule not present in parameters of this replicationClass.
+			continue
+		}
+
+		// ReplicationClass that matches both schedulingInterval from VGRClass and provisioner
+		if schedulingInterval == schedulingIntervalFromVGRClass {
+			v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
+				storageProvisioner, schedulingIntervalFromVGRClass))
+
+			return replicationClass, nil
+		}
+	}
+
+	v.log.Info(fmt.Sprintf("No VolumeReplicationClass found to match provisioner and schedule %s/%s",
+		storageProvisioner, schedulingIntervalFromVGRClass))
+
+	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 }
 
 func setFailureCondition(instance *cachev1alpha1.VolumeGroupReplication) {

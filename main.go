@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	cachev1alpha1 "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	"github.com/rakeshgm/volgroup-shim-operator/controllers"
 	//+kubebuilder:scaffold:imports
@@ -46,6 +47,8 @@ func init() {
 
 	utilruntime.Must(cachev1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
+
+	utilruntime.Must(volrep.AddToScheme(scheme))
 }
 
 func main() {
@@ -67,8 +70,6 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "392b1ba0.storage.ramendr.io",
