@@ -58,6 +58,19 @@ type VolumeGroupReplicationReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.2/pkg/reconcile
+
+
+type VGRInstance struct {
+	reconciler               *VolumeGroupReplicationReconciler
+	ctx                      context.Context
+	log                      logr.Logger
+	instance                 *cachev1alpha1.VolumeGroupReplication
+	savedInstanceStatus      cachev1alpha1.VolumeGroupReplicationStatus
+	volGroupReplicationClass *cachev1alpha1.VolumeGroupReplicationClass
+	namespacedName           string
+	result                   ctrl.Result
+}
+
 func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 	log := ctrl.Log.WithName("VolumeGroupReplicationReconciler")
@@ -105,20 +118,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	}
 	v.volGroupReplicationClass = volGrouReplClass
 
-	err = r.validatePVClabels(v.instance, log)
-	if err != nil {
-		setFailureCondition(v.instance)
-
-		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
-		if uErr != nil {
-			log.Error(uErr, "failed to update validatePVClabels status", "VRName", v.instance.Name)
-		}
-
-		return ctrl.Result{}, nil
-	}
-
-	volRepClass, err := v.selectVolumeReplicationClass()
-
+	_, err = r.listPVCs(v.instance, log)
 	if err != nil {
 		setFailureCondition(v.instance)
 
@@ -130,7 +130,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
-	log.Info("found", "volRepClass", volRepClass.Name)
+	// v.createVR(pvcList)
 
 	v.instance.Status.LastCompletionTime = getCurrentTime()
 	volState := getGroupReplicationState(v.instance)
@@ -170,17 +170,6 @@ func (r *VolumeGroupReplicationReconciler) updateGroupReplicationStatus(
 	return nil
 }
 
-type VGRInstance struct {
-	reconciler               *VolumeGroupReplicationReconciler
-	ctx                      context.Context
-	log                      logr.Logger
-	instance                 *cachev1alpha1.VolumeGroupReplication
-	savedInstanceStatus      cachev1alpha1.VolumeGroupReplicationStatus
-	volGroupReplicationClass *cachev1alpha1.VolumeGroupReplicationClass
-	namespacedName           string
-	result                   ctrl.Result
-}
-
 // VolumeGroupReplicationReconciler get volume replication class object from the subjected namespace and return the same.
 func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger logr.Logger,
 	req types.NamespacedName) (*cachev1alpha1.VolumeGroupReplicationClass, error) {
@@ -200,17 +189,17 @@ func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger
 	return vrcObj, nil
 }
 
-func (r *VolumeGroupReplicationReconciler) validatePVClabels(
+func (r *VolumeGroupReplicationReconciler) listPVCs(
 	instance *cachev1alpha1.VolumeGroupReplication,
 	logger logr.Logger,
-) error {
+) (*corev1.PersistentVolumeClaimList, error) {
 	pvcLabelSelector := instance.Spec.Selector
 
 	pvcSelector, err := metav1.LabelSelectorAsSelector(pvcLabelSelector)
 	if err != nil {
 		logger.Error(err, "error with PVC label selector", "pvcSelector", pvcLabelSelector)
 
-		return fmt.Errorf("error with PVC label selector, %w", err)
+		return nil, fmt.Errorf("error with PVC label selector, %w", err)
 	}
 	logger.Info("Fetching PersistentVolumeClaims", "pvcSelector", pvcLabelSelector)
 
@@ -224,7 +213,7 @@ func (r *VolumeGroupReplicationReconciler) validatePVClabels(
 	if err := r.Client.List(context.TODO(), pvcList, listOptions...); err != nil {
 		logger.Error(err, "failed to list PersistentVolumeClaims", "pvcSelector", pvcLabelSelector)
 
-		return fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
+		return nil, fmt.Errorf("failed to list PersistentVolumeClaims, %w", err)
 	}
 
 	logger.Info(fmt.Sprintf("Found %d PVCs using label selector %v", len(pvcList.Items), pvcLabelSelector))
@@ -233,7 +222,7 @@ func (r *VolumeGroupReplicationReconciler) validatePVClabels(
 		logger.Info("PVC", "name", pvcList.Items[idx].Name, "namespace", pvcList.Items[idx].Namespace)
 	}
 
-	return nil
+	return pvcList, nil
 }
 
 func (v *VGRInstance) listVolRepClasses() (*volrep.VolumeReplicationClassList, error) {
@@ -287,6 +276,45 @@ func (v *VGRInstance) selectVolumeReplicationClass() (*volrep.VolumeReplicationC
 		storageProvisioner, schedulingIntervalFromVGRClass))
 
 	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
+}
+
+func (v *VGRInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
+	volumeReplicationClass, err := v.selectVolumeReplicationClass()
+	if err != nil {
+		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
+			v.instance.Name, err)
+	}
+
+	volRep := &volrep.VolumeReplication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vrNamespacedName.Name,
+			Namespace: vrNamespacedName.Namespace,
+		},
+		Spec: volrep.VolumeReplicationSpec{
+			DataSource: corev1.TypedLocalObjectReference{
+				Kind:     "PersistentVolumeClaim",
+				Name:     vrNamespacedName.Name,
+				APIGroup: new(string),
+			},
+			ReplicationState:       state,
+			VolumeReplicationClass: volumeReplicationClass.GetName(),
+		},
+	}
+
+	// Let VRG receive notification for any changes to VolumeReplication CR
+	// created by VRG.
+	if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
+		return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s), %w",
+			volRep.Name, volRep.Namespace, err)
+	}
+
+	v.log.Info("Creating VolumeReplication resource", "resource", volRep)
+
+	if err := v.reconciler.Create(v.ctx, volRep); err != nil {
+		return fmt.Errorf("failed to create VolumeReplication resource (%s), %w", vrNamespacedName, err)
+	}
+
+	return nil
 }
 
 func setFailureCondition(instance *cachev1alpha1.VolumeGroupReplication) {
