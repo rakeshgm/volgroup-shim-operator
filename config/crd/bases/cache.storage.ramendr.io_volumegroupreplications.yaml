@@ -40,6 +40,9 @@ spec:
                 description: Desired state of all volumes [primary or secondary] in
                   this replication group; this value is propagated to children VolumeReplication
                   CRs
+                enum:
+                - primary
+                - secondary
                 type: string
               selector:
                 description: A label query over persistent volume claims to be grouped

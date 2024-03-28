@@ -25,15 +25,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	volrep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
-	cachev1alpha1 "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volRep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 )
 
 const storageProvisioner = "rook-ceph.rbd.csi.ceph.com"
@@ -59,16 +59,16 @@ type VolumeGroupReplicationReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.12.2/pkg/reconcile
 
-
 type VGRInstance struct {
 	reconciler               *VolumeGroupReplicationReconciler
 	ctx                      context.Context
 	log                      logr.Logger
-	instance                 *cachev1alpha1.VolumeGroupReplication
-	savedInstanceStatus      cachev1alpha1.VolumeGroupReplicationStatus
-	volGroupReplicationClass *cachev1alpha1.VolumeGroupReplicationClass
+	instance                 *volGroupRep.VolumeGroupReplication
+	savedInstanceStatus      volGroupRep.VolumeGroupReplicationStatus
+	volGroupReplicationClass *volGroupRep.VolumeGroupReplicationClass
+	volRepClass              *volRep.VolumeReplicationClass
+	volRepPVCs               []corev1.PersistentVolumeClaim
 	namespacedName           string
-	result                   ctrl.Result
 }
 
 func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -83,13 +83,13 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		reconciler:     r,
 		ctx:            ctx,
 		log:            log,
-		instance:       &cachev1alpha1.VolumeGroupReplication{},
+		instance:       &volGroupRep.VolumeGroupReplication{},
 		namespacedName: req.NamespacedName.String(),
 	}
 
 	// Fetch the VolumeGroupReplication instance
 	if err := r.APIReader.Get(ctx, req.NamespacedName, v.instance); err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			log.Info("Resource not found")
 
 			return ctrl.Result{}, nil
@@ -118,8 +118,10 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	}
 	v.volGroupReplicationClass = volGrouReplClass
 
-	_, err = r.listPVCs(v.instance, log)
+	// list PVCs
+	pvcList, err := r.listPVCs(v.instance, log)
 	if err != nil {
+		log.Error(err, "failed in listing PVCs")
 		setFailureCondition(v.instance)
 
 		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
@@ -129,8 +131,35 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 
 		return ctrl.Result{}, nil
 	}
+	v.volRepPVCs = pvcList.Items
 
-	// v.createVR(pvcList)
+	// get appropriate VolRepClass
+	volRepClass, err := v.selectVolumeReplicationClass()
+	if err != nil {
+		log.Error(err, "error in seleting VolumeReplicationClass")
+		setFailureCondition(v.instance)
+
+		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		if uErr != nil {
+			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
+		}
+
+		return ctrl.Result{}, nil
+	}
+	v.volRepClass = volRepClass
+
+	if err := v.processVolRep(); err != nil {
+		log.Error(err, "error in reconciling VolumeReplication for PVCs")
+
+		setFailureCondition(v.instance)
+
+		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		if uErr != nil {
+			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
+		}
+
+		return ctrl.Result{}, nil
+	}
 
 	v.instance.Status.LastCompletionTime = getCurrentTime()
 	volState := getGroupReplicationState(v.instance)
@@ -149,14 +178,14 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 // SetupWithManager sets up the controller with the Manager.
 func (r *VolumeGroupReplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&cachev1alpha1.VolumeGroupReplication{}).
+		For(&volGroupRep.VolumeGroupReplication{}).
 		Complete(r)
 }
 
 func (r *VolumeGroupReplicationReconciler) updateGroupReplicationStatus(
-	instance *cachev1alpha1.VolumeGroupReplication,
+	instance *volGroupRep.VolumeGroupReplication,
 	logger logr.Logger,
-	state cachev1alpha1.State,
+	state volGroupRep.State,
 	message string) error {
 	instance.Status.State = state
 	instance.Status.Message = message
@@ -172,12 +201,12 @@ func (r *VolumeGroupReplicationReconciler) updateGroupReplicationStatus(
 
 // VolumeGroupReplicationReconciler get volume replication class object from the subjected namespace and return the same.
 func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger logr.Logger,
-	req types.NamespacedName) (*cachev1alpha1.VolumeGroupReplicationClass, error) {
-	vrcObj := &cachev1alpha1.VolumeGroupReplicationClass{}
+	req types.NamespacedName) (*volGroupRep.VolumeGroupReplicationClass, error) {
+	vrcObj := &volGroupRep.VolumeGroupReplicationClass{}
 
 	err := r.Client.Get(context.TODO(), req, vrcObj)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if k8serrors.IsNotFound(err) {
 			logger.Error(err, "VolumeGroupReplicationClass not found", "VolumeGroupReplicationClass", req.Name)
 		} else {
 			logger.Error(err, "Got an unexpected error while fetching VolumeGroupReplicationClass", "VolumeGroupReplicationClass", req.Name)
@@ -190,7 +219,7 @@ func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger
 }
 
 func (r *VolumeGroupReplicationReconciler) listPVCs(
-	instance *cachev1alpha1.VolumeGroupReplication,
+	instance *volGroupRep.VolumeGroupReplication,
 	logger logr.Logger,
 ) (*corev1.PersistentVolumeClaimList, error) {
 	pvcLabelSelector := instance.Spec.Selector
@@ -225,9 +254,9 @@ func (r *VolumeGroupReplicationReconciler) listPVCs(
 	return pvcList, nil
 }
 
-func (v *VGRInstance) listVolRepClasses() (*volrep.VolumeReplicationClassList, error) {
+func (v *VGRInstance) listVolRepClasses() (*volRep.VolumeReplicationClassList, error) {
 
-	replClassList := &volrep.VolumeReplicationClassList{}
+	replClassList := &volRep.VolumeReplicationClassList{}
 
 	if err := v.reconciler.List(context.TODO(), replClassList); err != nil {
 		v.log.Error(err, "Failed to list Replication Classes")
@@ -239,7 +268,7 @@ func (v *VGRInstance) listVolRepClasses() (*volrep.VolumeReplicationClassList, e
 
 }
 
-func (v *VGRInstance) selectVolumeReplicationClass() (*volrep.VolumeReplicationClass, error) {
+func (v *VGRInstance) selectVolumeReplicationClass() (*volRep.VolumeReplicationClass, error) {
 
 	schedulingIntervalFromVGRClass := v.volGroupReplicationClass.Spec.Parameters["schedulingInterval"]
 
@@ -265,8 +294,8 @@ func (v *VGRInstance) selectVolumeReplicationClass() (*volrep.VolumeReplicationC
 
 		// ReplicationClass that matches both schedulingInterval from VGRClass and provisioner
 		if schedulingInterval == schedulingIntervalFromVGRClass {
-			v.log.Info(fmt.Sprintf("Found VolumeReplicationClass that matches provisioner and schedule %s/%s",
-				storageProvisioner, schedulingIntervalFromVGRClass))
+			v.log.Info(fmt.Sprintf("Found VolumeReplicationClass: (%s) that matches provisioner and schedule %s/%s",
+				replicationClass.Name, storageProvisioner, schedulingIntervalFromVGRClass))
 
 			return replicationClass, nil
 		}
@@ -278,34 +307,92 @@ func (v *VGRInstance) selectVolumeReplicationClass() (*volrep.VolumeReplicationC
 	return nil, fmt.Errorf("no VolumeReplicationClass found to match provisioner and schedule")
 }
 
-func (v *VGRInstance) createVR(vrNamespacedName types.NamespacedName, state volrep.ReplicationState) error {
-	volumeReplicationClass, err := v.selectVolumeReplicationClass()
-	if err != nil {
-		return fmt.Errorf("failed to find the appropriate VolumeReplicationClass (%s) %w",
-			v.instance.Name, err)
+func (v *VGRInstance) setVROwner(volRep *volRep.VolumeReplication, owner client.Object) (bool, error) {
+	const updated = true
+
+	for _, ownerReference := range volRep.GetOwnerReferences() {
+		if ownerReference.Name == owner.GetName() {
+			return !updated, nil
+		}
 	}
 
-	volRep := &volrep.VolumeReplication{
+	err := ctrl.SetControllerReference(owner, volRep, v.reconciler.Client.Scheme())
+
+	if err != nil {
+		return !updated, fmt.Errorf("failed to set VolRep owner %w", err)
+	}
+
+	err = v.updateVR(volRep)
+
+	if err != nil {
+		return !updated, fmt.Errorf("failed to update VolRep %s (%w)", volRep.GetName(), err)
+	}
+
+	v.log.Info(fmt.Sprintf("Object %s owns VolRep %s", owner.GetName(), volRep.GetName()))
+
+	return updated, nil
+}
+
+func (v *VGRInstance) updateVR(volRep *volRep.VolumeReplication) error {
+
+	v.log.Info("update VolRep")
+
+	if err := v.reconciler.Update(v.ctx, volRep); err != nil {
+		v.log.Error(err, "Failed to update VolumeReplication resource",
+			"name", volRep.Name, "namespace", volRep.Namespace)
+
+		return err
+	}
+
+	v.log.Info(fmt.Sprintf("Updated VolumeReplication resource (%s/%s)",
+		volRep.Name, volRep.Namespace))
+
+	return nil
+}
+
+func (v *VGRInstance) setOrUpdateVROwner(volRep *volRep.VolumeReplication) error {
+	updated, err := v.setVROwner(volRep, v.instance)
+	if err != nil {
+		return fmt.Errorf("failed to setOnwer to VolRep: %w", err)
+	}
+
+	if !updated {
+		v.log.Info("owner has already been set")
+	}
+
+	return nil
+}
+
+func (v *VGRInstance) createVR(vrNamespacedName types.NamespacedName, state volRep.ReplicationState) error {
+
+	v.log.Info("createVR")
+
+	// v.log.Info("got", "apiVersion", v.instance.APIVersion)
+	// v.log.Info("got", "schema name", v.reconciler.Scheme.Name())
+
+	// ownerRef := []metav1.OwnerReference{
+	// 	{APIVersion: v.reconciler.Scheme.Name(),
+	// 		Kind: v.instance.Kind,
+	// 		UID:  v.instance.GetUID(),
+	// 		Name: v.instance.GetName(),
+	// 	},
+	// }
+
+	volRep := &volRep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
 			Namespace: vrNamespacedName.Namespace,
 		},
-		Spec: volrep.VolumeReplicationSpec{
+		Spec: volRep.VolumeReplicationSpec{
 			DataSource: corev1.TypedLocalObjectReference{
 				Kind:     "PersistentVolumeClaim",
 				Name:     vrNamespacedName.Name,
 				APIGroup: new(string),
 			},
 			ReplicationState:       state,
-			VolumeReplicationClass: volumeReplicationClass.GetName(),
+			VolumeReplicationClass: v.volRepClass.GetName(),
+			// AutoResync:             v.autoResync(state),
 		},
-	}
-
-	// Let VRG receive notification for any changes to VolumeReplication CR
-	// created by VRG.
-	if err := ctrl.SetControllerReference(v.instance, volRep, v.reconciler.Scheme); err != nil {
-		return fmt.Errorf("failed to set owner reference to VolumeReplication resource (%s/%s), %w",
-			volRep.Name, volRep.Namespace, err)
 	}
 
 	v.log.Info("Creating VolumeReplication resource", "resource", volRep)
@@ -314,32 +401,118 @@ func (v *VGRInstance) createVR(vrNamespacedName types.NamespacedName, state volr
 		return fmt.Errorf("failed to create VolumeReplication resource (%s), %w", vrNamespacedName, err)
 	}
 
+	return v.setOrUpdateVROwner(volRep)
+}
+
+func (v *VGRInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
+) error {
+
+	v.log.Info("createOrUpdate VR")
+
+	state := volRep.ReplicationState(v.instance.Spec.ReplicationState)
+	volRepObj := &volRep.VolumeReplication{}
+
+	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRepObj)
+	// v.log.Error(err, "got errrrrr")
+	if err != nil {
+
+		// if resource is not found, proceed to createVR.
+		// exit if any error other than notFound occurs
+
+		if !k8serrors.IsNotFound(err) {
+			v.log.Error(err, "Failed to get VolumeReplication resource", "resource", vrNamespacedName)
+
+			return fmt.Errorf("failed to get VolumeReplication resource"+" (%s/%s), %w",
+				vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+		}
+
+		// create VR for PVC
+		if err = v.createVR(vrNamespacedName, state); err != nil {
+			v.log.Error(err, "Failed to create VolumeReplication resource", "resource", vrNamespacedName)
+
+			return fmt.Errorf("failed to create VolumeReplication resource"+" (%s/%s), %w",
+				vrNamespacedName.Namespace, vrNamespacedName.Name, err)
+		}
+		return nil
+	}
+
+	if volRepObj.Spec.ReplicationState == state {
+		v.log.Info("volumeReplication and volumeGroupReplication state match, no need to update")
+		return nil
+	}
+
+	return v.updateVolRep(volRepObj, state)
+
+}
+
+func (v *VGRInstance) updateVolRep(volRep *volRep.VolumeReplication, state volRep.ReplicationState) error {
+
+	volRep.Spec.ReplicationState = state
+	// volRep.Spec.AutoResync = v.autoResync(state)
+	err := v.updateVR(volRep)
+
+	if err != nil {
+		return fmt.Errorf("failed to update VolRep %s (%w)", volRep.GetName(), err)
+	}
+
+	v.log.Info("volumeReplication Updated")
+
+	return v.setOrUpdateVROwner(volRep)
+}
+
+func (v *VGRInstance) autoResync(state volRep.ReplicationState) bool {
+	if state != volRep.Secondary {
+		return false
+	}
+
+	return true
+}
+
+func (v *VGRInstance) processVolRep() error {
+
+	v.log.Info("processing VolRep")
+
+	for i := range v.volRepPVCs {
+		pvc := &v.volRepPVCs[i]
+		pvcNamespacedName := types.NamespacedName{Name: pvc.Name, Namespace: pvc.Namespace}
+
+		err := v.createOrUpdateVR(pvcNamespacedName)
+
+		if err != nil {
+			v.log.Info("Failure in creating or updating VolumeReplication resource for PVC",
+				"errorValue", err)
+
+			return err
+		}
+
+	}
+
 	return nil
 }
 
-func setFailureCondition(instance *cachev1alpha1.VolumeGroupReplication) {
+func setFailureCondition(instance *volGroupRep.VolumeGroupReplication) {
 	switch instance.Spec.ReplicationState {
-	case cachev1alpha1.Primary:
+	case volGroupRep.Primary:
 		setFailedPromotionCondition(&instance.Status.Conditions, instance.Generation)
-	case cachev1alpha1.Secondary:
+	case volGroupRep.Secondary:
 		setFailedDemotionCondition(&instance.Status.Conditions, instance.Generation)
 	}
 }
 
-func getGroupReplicationState(instance *cachev1alpha1.VolumeGroupReplication) cachev1alpha1.State {
+func getGroupReplicationState(instance *volGroupRep.VolumeGroupReplication) volGroupRep.State {
 	switch instance.Spec.ReplicationState {
-	case cachev1alpha1.Primary:
-		return cachev1alpha1.PrimaryState
-	case cachev1alpha1.Secondary:
-		return cachev1alpha1.SecondaryState
+	case volGroupRep.Primary:
+		return volGroupRep.PrimaryState
+	case volGroupRep.Secondary:
+		return volGroupRep.SecondaryState
 	}
 
-	return cachev1alpha1.UnknownState
+	return volGroupRep.UnknownState
 }
 
-func getCurrentReplicationState(instance *cachev1alpha1.VolumeGroupReplication) cachev1alpha1.State {
+func getCurrentReplicationState(instance *volGroupRep.VolumeGroupReplication) volGroupRep.State {
 	if instance.Status.State == "" {
-		return cachev1alpha1.UnknownState
+		return volGroupRep.UnknownState
 	}
 
 	return instance.Status.State

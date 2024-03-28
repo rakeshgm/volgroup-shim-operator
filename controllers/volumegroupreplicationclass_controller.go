@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	cachev1alpha1 "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 )
 
 // VolumeGroupReplicationClassReconciler reconciles a VolumeGroupReplicationClass object
@@ -57,6 +57,6 @@ func (r *VolumeGroupReplicationClassReconciler) Reconcile(ctx context.Context, r
 // SetupWithManager sets up the controller with the Manager.
 func (r *VolumeGroupReplicationClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&cachev1alpha1.VolumeGroupReplicationClass{}).
+		For(&volGroupRep.VolumeGroupReplicationClass{}).
 		Complete(r)
 }

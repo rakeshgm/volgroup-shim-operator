@@ -45,6 +45,7 @@ type VolumeGroupReplicationSpec struct {
 
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs
+	// +kubebuilder:validation:Enum=primary;secondary
 	ReplicationState ReplicationState `json:"replicationState"`
 
 	// VolumeGroupReplicationClass may be left nil to indicate that
