@@ -68,6 +68,7 @@ type VGRInstance struct {
 	volGroupReplicationClass *volGroupRep.VolumeGroupReplicationClass
 	volRepClass              *volRep.VolumeReplicationClass
 	volRepPVCs               []corev1.PersistentVolumeClaim
+	volReps                  volRep.VolumeReplicationList
 	namespacedName           string
 }
 
@@ -84,7 +85,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		ctx:            ctx,
 		log:            log,
 		instance:       &volGroupRep.VolumeGroupReplication{},
-		namespacedName: req.NamespacedName.String(),
+		namespacedName: req.NamespacedName.Namespace,
 	}
 
 	// Fetch the VolumeGroupReplication instance
@@ -160,6 +161,21 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 
 		return ctrl.Result{}, nil
 	}
+
+	volRepList, err := v.ListVolReps()
+	if err != nil {
+		log.Error(err, "error in listing VolumeReplication Resources")
+
+		setFailureCondition(v.instance)
+
+		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		if uErr != nil {
+			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
+		}
+
+		return ctrl.Result{}, nil
+	}
+	v.volReps = *volRepList
 
 	v.instance.Status.LastCompletionTime = getCurrentTime()
 	volState := getGroupReplicationState(v.instance)
@@ -367,17 +383,6 @@ func (v *VGRInstance) createVR(vrNamespacedName types.NamespacedName, state volR
 
 	v.log.Info("createVR")
 
-	// v.log.Info("got", "apiVersion", v.instance.APIVersion)
-	// v.log.Info("got", "schema name", v.reconciler.Scheme.Name())
-
-	// ownerRef := []metav1.OwnerReference{
-	// 	{APIVersion: v.reconciler.Scheme.Name(),
-	// 		Kind: v.instance.Kind,
-	// 		UID:  v.instance.GetUID(),
-	// 		Name: v.instance.GetName(),
-	// 	},
-	// }
-
 	volRep := &volRep.VolumeReplication{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      vrNamespacedName.Name,
@@ -413,7 +418,7 @@ func (v *VGRInstance) createOrUpdateVR(vrNamespacedName types.NamespacedName,
 	volRepObj := &volRep.VolumeReplication{}
 
 	err := v.reconciler.Get(v.ctx, vrNamespacedName, volRepObj)
-	// v.log.Error(err, "got errrrrr")
+
 	if err != nil {
 
 		// if resource is not found, proceed to createVR.
@@ -488,6 +493,24 @@ func (v *VGRInstance) processVolRep() error {
 	}
 
 	return nil
+}
+
+func (v *VGRInstance) ListVolReps() (*volRep.VolumeReplicationList, error) {
+	v.log.Info("volRep list", "namespace", v.namespacedName)
+
+	volRepList := &volRep.VolumeReplicationList{}
+
+	listOptions := &client.ListOptions{
+		Namespace: v.namespacedName,
+	}
+
+	if err := v.reconciler.List(context.TODO(), volRepList, listOptions); err != nil {
+		v.log.Error(err, "failed to list VolReps", "in namespace", v.namespacedName)
+		return nil, fmt.Errorf("failed to list VolRepList, %w", err)
+	}
+
+	return volRepList, nil
+
 }
 
 func setFailureCondition(instance *volGroupRep.VolumeGroupReplication) {
