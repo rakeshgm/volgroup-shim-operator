@@ -1,0 +1,5 @@
+resources:
+- namespace.yaml
+- busybox-dc-1.yaml
+- busybox-pvc-1.yaml
+- busybox-pvc-2.yaml

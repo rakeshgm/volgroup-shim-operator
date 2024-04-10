@@ -1,0 +1,8 @@
+apiVersion: cache.storage.ramendr.io/v1alpha1
+kind: VolumeGroupReplicationClass
+metadata:
+  name: vgrc-sample-shim
+spec:
+  provisioner: rook-ceph.rbd.csi.ceph.com 
+  parameters:
+    schedulingInterval: 1m
