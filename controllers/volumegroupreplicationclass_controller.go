@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/go-logr/logr"
 	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 )
 
@@ -31,6 +32,7 @@ import (
 type VolumeGroupReplicationClassReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	Log    logr.Logger
 }
 
 //+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;update;patch;delete

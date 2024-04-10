@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	// "github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -30,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	volRep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
 	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
@@ -43,6 +43,7 @@ type VolumeGroupReplicationReconciler struct {
 	client.Client
 	APIReader client.Reader
 	Scheme    *runtime.Scheme
+	Log       logr.Logger
 }
 
 //+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplications,verbs=get;list;watch;create;update;patch;delete
@@ -73,8 +74,11 @@ type VGRInstance struct {
 }
 
 func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
-	log := ctrl.Log.WithName("VolumeGroupReplicationReconciler")
+	// add uuid to log if needed, removed now to make log more readable
+	log := r.Log.WithValues("VGR",
+		req.NamespacedName,
+		// "rid", uuid.New(),
+	)
 	log.Info("Entering reconcile loop", "namespacedName", req.NamespacedName)
 
 	defer log.Info("Exiting reconcile loop")
@@ -110,7 +114,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	if err != nil {
 		setFailureCondition(v.instance)
 
-		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		uErr := r.updateVGRStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
 		if uErr != nil {
 			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
 		}
@@ -124,7 +128,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		setConditionsToUnknown(&v.instance.Status.Conditions, v.instance.Generation)
 		message := "initial conditions set"
 		log.Info(message)
-		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), message)
+		uErr := r.updateVGRStatus(v.instance, log, getCurrentReplicationState(v.instance), message)
 		if uErr != nil {
 			log.Error(uErr, "failed to set volumeGroupReplication initial status conditions", "VRName", v.instance.Name)
 			return ctrl.Result{}, uErr
@@ -137,7 +141,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		log.Error(err, "failed in listing PVCs")
 		setFailureCondition(v.instance)
 
-		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		uErr := r.updateVGRStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
 		if uErr != nil {
 			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
 		}
@@ -152,7 +156,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		log.Error(err, "error in seleting VolumeReplicationClass")
 		setFailureCondition(v.instance)
 
-		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		uErr := r.updateVGRStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
 		if uErr != nil {
 			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
 		}
@@ -166,7 +170,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 
 		setFailureCondition(v.instance)
 
-		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		uErr := r.updateVGRStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
 		if uErr != nil {
 			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
 		}
@@ -180,7 +184,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 
 		setFailureCondition(v.instance)
 
-		uErr := r.updateGroupReplicationStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
+		uErr := r.updateVGRStatus(v.instance, log, getCurrentReplicationState(v.instance), err.Error())
 		if uErr != nil {
 			log.Error(uErr, "failed to update volumeGroupReplication status", "VRName", v.instance.Name)
 		}
@@ -189,7 +193,10 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	}
 	v.volReps = *volRepList
 
-	v.addOrUpdateVolGroupRepConditions()
+	v.UpdateVGRConditions()
+	v.updateVGRLastGroupSyncTime()
+	v.updateVGRLastGroupSyncDuration()
+	v.updateVGRLastGroupSyncBytes()
 
 	v.instance.Status.LastCompletionTime = getCurrentTime()
 	volState := getGroupReplicationState(v.instance)
@@ -197,7 +204,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 	msg := fmt.Sprintf("volume is marked %s", string(volState))
 	log.Info(msg)
 
-	err = r.updateGroupReplicationStatus(v.instance, log, volState, msg)
+	err = r.updateVGRStatus(v.instance, log, volState, msg)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -213,7 +220,7 @@ func (r *VolumeGroupReplicationReconciler) SetupWithManager(mgr ctrl.Manager) er
 		Complete(r)
 }
 
-func (r *VolumeGroupReplicationReconciler) updateGroupReplicationStatus(
+func (r *VolumeGroupReplicationReconciler) updateVGRStatus(
 	instance *volGroupRep.VolumeGroupReplication,
 	logger logr.Logger,
 	state volGroupRep.State,
@@ -513,8 +520,8 @@ func (v *VGRInstance) listVolReps() (*[]volRep.VolumeReplication, error) {
 	return &processedVolRepList, nil
 }
 
-func (v *VGRInstance) addOrUpdateVolGroupRepConditions() {
-	v.log.Info("udpating VGR conditions")
+func (v *VGRInstance) UpdateVGRConditions() {
+	v.log.Info("updating VGR conditions")
 
 	for indx := range v.volReps {
 		volRep := v.volReps[indx]
@@ -522,7 +529,7 @@ func (v *VGRInstance) addOrUpdateVolGroupRepConditions() {
 
 		for i := range volRep.Status.Conditions {
 			condition := volRep.Status.Conditions[i]
-			v.log.Info("condition type and status", condition.Type, condition.Status)
+			v.log.Info("got condition type and status", condition.Type, condition.Status)
 			switch condition.Type {
 			case ConditionCompleted:
 				updateStatusConditonCompleted(v.instance, &condition)
@@ -533,6 +540,76 @@ func (v *VGRInstance) addOrUpdateVolGroupRepConditions() {
 			}
 		}
 	}
+}
+
+func (v *VGRInstance) updateVGRLastGroupSyncTime() {
+	v.log.Info("updating lastGroupSyncTime")
+	var leastLastSyncTime *metav1.Time
+
+	for indx := range v.volReps {
+		volRep := v.volReps[indx].Status
+		// If any protected PVC reports nil, report that back (no sync time available)
+		if volRep.LastSyncTime == nil {
+			leastLastSyncTime = nil
+
+			break
+		}
+
+		if leastLastSyncTime == nil {
+			leastLastSyncTime = volRep.LastSyncTime
+
+			continue
+		}
+
+		if volRep.LastSyncTime != nil && volRep.LastSyncTime.Before(leastLastSyncTime) {
+			leastLastSyncTime = volRep.LastSyncTime
+		}
+	}
+
+	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
+}
+
+func (v *VGRInstance) updateVGRLastGroupSyncDuration() {
+	v.log.Info("updating lastGroupSyncDuration")
+	var maxLastSyncDuration *metav1.Duration
+
+	for indx := range v.volReps {
+		volRep := v.volReps[indx].Status
+		if maxLastSyncDuration == nil && volRep.LastSyncDuration != nil {
+			maxLastSyncDuration = new(metav1.Duration)
+			*maxLastSyncDuration = *volRep.LastSyncDuration
+
+			continue
+		}
+
+		if volRep.LastSyncDuration != nil &&
+			volRep.LastSyncDuration.Duration > maxLastSyncDuration.Duration {
+			*maxLastSyncDuration = *volRep.LastSyncDuration
+		}
+	}
+
+	v.instance.Status.LastGroupSyncDuration = maxLastSyncDuration
+}
+
+func (v *VGRInstance) updateVGRLastGroupSyncBytes() {
+	v.log.Info("updating lastGroupSyncBytes")
+	var totalLastSyncBytes *int64
+
+	for indx := range v.volReps {
+		volRep := v.volReps[indx].Status
+		if totalLastSyncBytes == nil && volRep.LastSyncBytes != nil {
+			totalLastSyncBytes = new(int64)
+			*totalLastSyncBytes = *volRep.LastSyncBytes
+
+			continue
+		}
+
+		if volRep.LastSyncBytes != nil {
+			*totalLastSyncBytes += *volRep.LastSyncBytes
+		}
+	}
+
+	v.instance.Status.LastGroupSyncBytes = totalLastSyncBytes
 }
 
 func setFailureCondition(instance *volGroupRep.VolumeGroupReplication) {
