@@ -19,26 +19,33 @@ package controllers
 import (
 	"time"
 
+	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
 	ConditionCompleted = "Completed"
 	ConditionDegraded  = "Degraded"
+	ConditionResyncing = "Resyncing"
 )
 
 const (
-	Success         = "Success"
+	Success = "Success"
+	// used when replication state is primary
 	Promoted        = "Promoted"
-	Demoted         = "Demoted"
 	FailedToPromote = "FailedToPromote"
-	FailedToDemote  = "FailedToDemote"
-	Error           = "Error"
-	VolumeDegraded  = "VolumeDegraded"
-	Healthy         = "Healthy"
+	// used when replication state is secondary
+	Demoted        = "Demoted"
+	FailedToDemote = "FailedToDemote"
+
+	Error          = "Error"
+	VolumeDegraded = "VolumeDegraded"
+	Healthy        = "Healthy"
+
 	ResyncTriggered = "ResyncTriggered"
 	FailedToResync  = "FailedToResync"
 	NotResyncing    = "NotResyncing"
+	Unknown         = "Unknown"
 )
 
 func setStatusCondition(existingConditions *[]metav1.Condition, newCondition *metav1.Condition) {
@@ -73,34 +80,104 @@ func findCondition(existingConditions []metav1.Condition, conditionType string) 
 	return nil
 }
 
-// sets conditions when volume promotion was failed.
-func setFailedPromotionCondition(conditions *[]metav1.Condition, observedGeneration int64) {
+func setStatusConditionCompleted(conditions *[]metav1.Condition, reason string, observedGeneration int64,
+	cStatus metav1.ConditionStatus,
+) {
 	setStatusCondition(conditions, &metav1.Condition{
 		Type:               ConditionCompleted,
-		Reason:             FailedToPromote,
+		Reason:             reason,
 		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
+		Status:             cStatus,
 	})
+}
+
+func setStatusConditionDegrated(conditions *[]metav1.Condition, reason string, observedGeneration int64,
+	cStatus metav1.ConditionStatus,
+) {
 	setStatusCondition(conditions, &metav1.Condition{
 		Type:               ConditionDegraded,
-		Reason:             Error,
+		Reason:             reason,
 		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
+		Status:             cStatus,
 	})
+}
+
+func setStatusConditionResyncing(conditions *[]metav1.Condition, reason string, observedGeneration int64,
+	cStatus metav1.ConditionStatus,
+) {
+	setStatusCondition(conditions, &metav1.Condition{
+		Type:               ConditionResyncing,
+		Reason:             reason,
+		ObservedGeneration: observedGeneration,
+		Status:             cStatus,
+	})
+}
+
+func setConditionsToUnknown(conditions *[]metav1.Condition, observedGeneration int64) {
+	setStatusConditionCompleted(conditions, Unknown, observedGeneration, metav1.ConditionUnknown)
+	setStatusConditionDegrated(conditions, Unknown, observedGeneration, metav1.ConditionUnknown)
+	setStatusConditionResyncing(conditions, Unknown, observedGeneration, metav1.ConditionUnknown)
+}
+
+// sets conditions when volume promotion was failed.
+func setFailedPromotionCondition(conditions *[]metav1.Condition, observedGeneration int64) {
+	setStatusConditionCompleted(conditions, FailedToPromote, observedGeneration, metav1.ConditionFalse)
+	setStatusConditionDegrated(conditions, Error, observedGeneration, metav1.ConditionTrue)
+	setStatusConditionResyncing(conditions, Error, observedGeneration, metav1.ConditionFalse)
 }
 
 // sets conditions when volume demotion was failed.
 func setFailedDemotionCondition(conditions *[]metav1.Condition, observedGeneration int64) {
-	setStatusCondition(conditions, &metav1.Condition{
-		Type:               ConditionCompleted,
-		Reason:             FailedToDemote,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionFalse,
-	})
-	setStatusCondition(conditions, &metav1.Condition{
-		Type:               ConditionDegraded,
-		Reason:             Error,
-		ObservedGeneration: observedGeneration,
-		Status:             metav1.ConditionTrue,
-	})
+	setStatusConditionCompleted(conditions, FailedToDemote, observedGeneration, metav1.ConditionFalse)
+	setStatusConditionDegrated(conditions, Error, observedGeneration, metav1.ConditionTrue)
+	setStatusConditionResyncing(conditions, Error, observedGeneration, metav1.ConditionFalse)
+}
+
+func updateStatusConditonCompleted(instance *volGroupRep.VolumeGroupReplication, newCondition *metav1.Condition) {
+	switch instance.Spec.ReplicationState {
+	case volGroupRep.Primary:
+		updateStatusConditionCompletedForPrimaryState(&instance.Status.Conditions, newCondition, instance.Generation)
+	case volGroupRep.Secondary:
+		updateStatusConditionCompletedForSecondaryState(&instance.Status.Conditions, newCondition, instance.Generation)
+	}
+}
+
+func updateStatusConditionCompletedForPrimaryState(existingConditions *[]metav1.Condition,
+	newCondition *metav1.Condition, observedGeneration int64,
+) {
+	if newCondition.Status == metav1.ConditionFalse {
+		setStatusConditionCompleted(existingConditions, FailedToPromote, observedGeneration, metav1.ConditionFalse)
+	} else {
+		setStatusConditionCompleted(existingConditions, Promoted, observedGeneration, metav1.ConditionTrue)
+	}
+}
+
+func updateStatusConditionCompletedForSecondaryState(existingConditions *[]metav1.Condition,
+	newCondition *metav1.Condition, observedGeneration int64,
+) {
+	if newCondition.Status == metav1.ConditionFalse {
+		setStatusConditionCompleted(existingConditions, FailedToDemote, observedGeneration, metav1.ConditionFalse)
+	} else {
+		setStatusConditionCompleted(existingConditions, Demoted, observedGeneration, metav1.ConditionTrue)
+	}
+}
+
+func updateStatusConditionDegraded(existingConditions *[]metav1.Condition,
+	newCondition *metav1.Condition, observedGeneration int64,
+) {
+	if newCondition.Status == metav1.ConditionTrue {
+		setStatusConditionDegrated(existingConditions, VolumeDegraded, observedGeneration, metav1.ConditionTrue)
+	} else {
+		setStatusConditionDegrated(existingConditions, Healthy, observedGeneration, metav1.ConditionFalse)
+	}
+}
+
+func updateStatusConditionResyncing(existingConditions *[]metav1.Condition,
+	newCondition *metav1.Condition, observedGeneration int64,
+) {
+	if newCondition.Status == metav1.ConditionFalse {
+		setStatusConditionResyncing(existingConditions, NotResyncing, observedGeneration, metav1.ConditionFalse)
+	} else {
+		setStatusConditionResyncing(existingConditions, ResyncTriggered, observedGeneration, metav1.ConditionTrue)
+	}
 }
