@@ -40,6 +40,9 @@ spec:
                 description: Desired state of all volumes [primary or secondary] in
                   this replication group; this value is propagated to children VolumeReplication
                   CRs
+                enum:
+                - primary
+                - secondary
                 type: string
               selector:
                 description: A label query over persistent volume claims to be grouped
@@ -107,8 +110,8 @@ spec:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct
                     use as an array at the field path .status.conditions.  For example,
-                    type FooStatus struct{ // Represents the observations of a foo's
-                    current state. // Known .status.conditions.type are: \"Available\",
+                    \n type FooStatus struct{ // Represents the observations of a
+                    foo's current state. // Known .status.conditions.type are: \"Available\",
                     \"Progressing\", and \"Degraded\" // +patchMergeKey=type // +patchStrategy=merge
                     // +listType=map // +listMapKey=type Conditions []metav1.Condition
                     `json:\"conditions,omitempty\" patchStrategy:\"merge\" patchMergeKey:\"type\"
@@ -171,6 +174,20 @@ spec:
                   type: object
                 type: array
               lastCompletionTime:
+                format: date-time
+                type: string
+              lastGroupSyncBytes:
+                description: lastGroupSyncBytes is the total bytes transferred from
+                  the most recent successful synchronization of all PVCs
+                format: int64
+                type: integer
+              lastGroupSyncDuration:
+                description: lastGroupSyncDuration is the max time from all the successful
+                  synced PVCs
+                type: string
+              lastGroupSyncTime:
+                description: lastGroupSyncTime is the time of the most recent successful
+                  synchronization of all PVCs
                 format: date-time
                 type: string
               lastStartTime:

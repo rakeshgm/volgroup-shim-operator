@@ -31,7 +31,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	cachev1alpha1 "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volRep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
+	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	"github.com/rakeshgm/volgroup-shim-operator/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -44,8 +45,10 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(cachev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(volGroupRep.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
+
+	utilruntime.Must(volRep.AddToScheme(scheme))
 }
 
 func main() {
@@ -67,8 +70,6 @@ func main() {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     metricsAddr,
-		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "392b1ba0.storage.ramendr.io",
@@ -92,6 +93,7 @@ func main() {
 	if err = (&controllers.VolumeGroupReplicationClassReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		Log:    ctrl.Log.WithName("VolumeGroupReplicationClass"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeGroupReplicationClass")
 		os.Exit(1)
@@ -100,6 +102,7 @@ func main() {
 		Client:    mgr.GetClient(),
 		Scheme:    mgr.GetScheme(),
 		APIReader: mgr.GetAPIReader(),
+		Log:       ctrl.Log.WithName("VolumeGroupReplication"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "VolumeGroupReplication")
 		os.Exit(1)

@@ -35,8 +35,7 @@ type VolumeGroupReplicationClassSpec struct {
 }
 
 // VolumeGroupReplicationClassStatus defines the observed state of VolumeGroupReplicationClass
-type VolumeGroupReplicationClassStatus struct {
-}
+type VolumeGroupReplicationClassStatus struct{}
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status

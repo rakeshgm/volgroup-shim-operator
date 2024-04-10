@@ -45,6 +45,7 @@ type VolumeGroupReplicationSpec struct {
 
 	// Desired state of all volumes [primary or secondary] in this replication group;
 	// this value is propagated to children VolumeReplication CRs
+	// +kubebuilder:validation:Enum=primary;secondary
 	ReplicationState ReplicationState `json:"replicationState"`
 
 	// VolumeGroupReplicationClass may be left nil to indicate that
@@ -69,7 +70,20 @@ type VolumeGroupReplicationStatus struct {
 	// +optional
 	ObservedGeneration int64        `json:"observedGeneration,omitempty"`
 	LastStartTime      *metav1.Time `json:"lastStartTime,omitempty"`
+
 	LastCompletionTime *metav1.Time `json:"lastCompletionTime,omitempty"`
+	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
+	//+optional
+	LastGroupSyncTime *metav1.Time `json:"lastGroupSyncTime,omitempty"`
+
+	// lastGroupSyncDuration is the max time from all the successful synced PVCs
+	//+optional
+	LastGroupSyncDuration *metav1.Duration `json:"lastGroupSyncDuration,omitempty"`
+
+	// lastGroupSyncBytes is the total bytes transferred from the most recent
+	// successful synchronization of all PVCs
+	//+optional
+	LastGroupSyncBytes *int64 `json:"lastGroupSyncBytes,omitempty"`
 }
 
 //+kubebuilder:object:root=true
