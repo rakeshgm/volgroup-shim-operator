@@ -1,0 +1,10 @@
+apiVersion: cache.storage.ramendr.io/v1alpha1
+kind: VolumeGroupReplication
+metadata:
+  name: vgr-sample-shim
+spec:
+  replicationState: primary
+  volumeGroupReplicationClass: vgrc-sample-shim
+  selector:
+    matchLabels:
+      appname: busybox_app1
