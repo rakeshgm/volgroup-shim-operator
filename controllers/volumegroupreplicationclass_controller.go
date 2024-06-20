@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/go-logr/logr"
-	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 )
 
 // VolumeGroupReplicationClassReconciler reconciles a VolumeGroupReplicationClass object
@@ -35,9 +35,9 @@ type VolumeGroupReplicationClassReconciler struct {
 	Log    logr.Logger
 }
 
-//+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplicationclasses/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplicationclasses/finalizers,verbs=update
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplicationclasses/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -59,6 +59,6 @@ func (r *VolumeGroupReplicationClassReconciler) Reconcile(ctx context.Context, r
 // SetupWithManager sets up the controller with the Manager.
 func (r *VolumeGroupReplicationClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&volGroupRep.VolumeGroupReplicationClass{}).
+		For(&volRep.VolumeGroupReplicationClass{}).
 		Complete(r)
 }

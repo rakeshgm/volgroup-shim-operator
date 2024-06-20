@@ -1,5 +1,5 @@
 /*
-Copyright 2024.
+Copyright 2024 The Kubernetes-CSI-Addons Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,70 +20,58 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ReplicationState represents the replication operations to be performed on the volume
-type ReplicationState string
-
-const (
-	// Promote the protected PVCs to primary
-	Primary ReplicationState = "primary"
-
-	// Demote the proteced PVCs to secondary
-	Secondary ReplicationState = "secondary"
-)
-
-type State string
-
-const (
-	PrimaryState   State = "Primary"
-	SecondaryState State = "Secondary"
-	UnknownState   State = "Unknown"
-)
-
 // VolumeGroupReplicationSpec defines the desired state of VolumeGroupReplication
 type VolumeGroupReplicationSpec struct {
-	// Important: Run "make" to regenerate code after modifying this file
+	// volumeGroupReplicationClassName is the volumeGroupReplicationClass name for this VolumeGroupReplication resource
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="volumeGroupReplicationClassName is immutable"
+	VolumeGroupReplicationClassName string `json:"volumeGroupReplicationClassName"`
 
-	// Desired state of all volumes [primary or secondary] in this replication group;
-	// this value is propagated to children VolumeReplication CRs
-	// +kubebuilder:validation:Enum=primary;secondary
+	// volumeReplicationClassName is the volumeReplicationClass name for VolumeReplication object
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="volumReplicationClassName is immutable"
+	VolumeReplicationClassName string `json:"volumeReplicationClassName"`
+
+	// Name of the VolumeReplication object created for this volumeGroupReplication
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="volumeReplicationName is immutable"
+	VolumeReplicationName string `json:"volumeReplicationName,omitempty"`
+
+	// Name of the VolumeGroupReplicationContent object created for this volumeGroupReplication
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="volumeGroupReplicationContentName is immutable"
+	VolumeGroupReplicationContentName string `json:"volumeGroupReplicationContentName,omitempty"`
+
+	// Source specifies where a group replications will be created from.
+	// This field is immutable after creation.
+	// Required.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="source is immutable"
+	Source VolumeGroupReplicationSource `json:"source"`
+
+	// ReplicationState represents the replication operation to be performed on the group.
+	// Supported operations are "primary", "secondary" and "resync"
+	// +kubebuilder:validation:Required
 	ReplicationState ReplicationState `json:"replicationState"`
 
-	// VolumeGroupReplicationClass may be left nil to indicate that
-	// the default class will be used.
-	VolumeGroupReplicationClass string `json:"volumeGroupReplicationClass"`
+	// AutoResync represents the group to be auto resynced when
+	// ReplicationState is "secondary"
+	// +kubebuilder:default:=false
+	AutoResync bool `json:"autoResync"`
+}
 
-	// A label query over persistent volume claims to be grouped together
-	// for replication. This labelSelector will be used to match
-	// the label added to a PVC.
-	Selector *metav1.LabelSelector `json:"selector"`
+// VolumeGroupReplicationSource specifies the source for the the volumeGroupReplication
+type VolumeGroupReplicationSource struct {
+	// Selector is a label query over persistent volume claims that are to be
+	// grouped together for replication.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="selector is immutable"
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 }
 
 // VolumeGroupReplicationStatus defines the observed state of VolumeGroupReplication
 type VolumeGroupReplicationStatus struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
-	State   State  `json:"state,omitempty"`
-	Message string `json:"message,omitempty"`
-	// Conditions are the list of conditions and their status.
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// observedGeneration is the last generation change the operator has dealt with
-	// +optional
-	ObservedGeneration int64        `json:"observedGeneration,omitempty"`
-	LastStartTime      *metav1.Time `json:"lastStartTime,omitempty"`
-
-	LastCompletionTime *metav1.Time `json:"lastCompletionTime,omitempty"`
-	// lastGroupSyncTime is the time of the most recent successful synchronization of all PVCs
-	//+optional
-	LastGroupSyncTime *metav1.Time `json:"lastGroupSyncTime,omitempty"`
-
-	// lastGroupSyncDuration is the max time from all the successful synced PVCs
-	//+optional
-	LastGroupSyncDuration *metav1.Duration `json:"lastGroupSyncDuration,omitempty"`
-
-	// lastGroupSyncBytes is the total bytes transferred from the most recent
-	// successful synchronization of all PVCs
-	//+optional
-	LastGroupSyncBytes *int64 `json:"lastGroupSyncBytes,omitempty"`
+	VolumeReplicationStatus `json:",inline"`
 }
 
 //+kubebuilder:object:root=true

@@ -1,5 +1,5 @@
 /*
-Copyright 2024 The Kubernetes-CSI-Addons Authors.
+Copyright 2022 The Kubernetes-CSI-Addons Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,48 +20,50 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// VolumeGroupReplicationClassSpec specifies parameters that an underlying storage system uses
-// when creating a volumegroup replica. A specific VolumeGroupReplicationClass is used by specifying
-// its name in a VolumeGroupReplication object.
+// VolumeReplicationClassSpec specifies parameters that an underlying storage system uses
+// when creating a volume replica. A specific VolumeReplicationClass is used by specifying
+// its name in a VolumeReplication object.
 // +kubebuilder:validation:XValidation:rule="has(self.parameters) == has(oldSelf.parameters)",message="parameters are immutable"
-type VolumeGroupReplicationClassSpec struct {
+type VolumeReplicationClassSpec struct {
 	// Provisioner is the name of storage provisioner
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="provisioner is immutable"
 	Provisioner string `json:"provisioner"`
 	// Parameters is a key-value map with storage provisioner specific configurations for
-	// creating volume group replicas
+	// creating volume replicas
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="parameters are immutable"
 	Parameters map[string]string `json:"parameters,omitempty"`
 }
 
-// VolumeGroupReplicationClassStatus defines the observed state of VolumeGroupReplicationClass
-type VolumeGroupReplicationClassStatus struct {
-}
+// VolumeReplicationClassStatus defines the observed state of VolumeReplicationClass.
+type VolumeReplicationClassStatus struct{}
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-//+kubebuilder:resource:scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster,shortName=vrc
+// +kubebuilder:printcolumn:JSONPath=".spec.provisioner",name=provisioner,type=string
 
-// VolumeGroupReplicationClass is the Schema for the volumegroupreplicationclasses API
-type VolumeGroupReplicationClass struct {
+// VolumeReplicationClass is the Schema for the volumereplicationclasses API.
+type VolumeReplicationClass struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   VolumeGroupReplicationClassSpec   `json:"spec,omitempty"`
-	Status VolumeGroupReplicationClassStatus `json:"status,omitempty"`
+	// +kubebuilder:validation:Required
+	Spec VolumeReplicationClassSpec `json:"spec"`
+
+	Status VolumeReplicationClassStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
-// VolumeGroupReplicationClassList contains a list of VolumeGroupReplicationClass
-type VolumeGroupReplicationClassList struct {
+// VolumeReplicationClassList contains a list of VolumeReplicationClass.
+type VolumeReplicationClassList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []VolumeGroupReplicationClass `json:"items"`
+	Items           []VolumeReplicationClass `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&VolumeGroupReplicationClass{}, &VolumeGroupReplicationClassList{})
+	SchemeBuilder.Register(&VolumeReplicationClass{}, &VolumeReplicationClassList{})
 }

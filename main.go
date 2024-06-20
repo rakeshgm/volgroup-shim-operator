@@ -31,8 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	volRep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
-	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 	"github.com/rakeshgm/volgroup-shim-operator/controllers"
 	//+kubebuilder:scaffold:imports
 )
@@ -45,7 +44,6 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
-	utilruntime.Must(volGroupRep.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 
 	utilruntime.Must(volRep.AddToScheme(scheme))

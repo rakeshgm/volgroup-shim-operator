@@ -2,7 +2,7 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: volumegroupreplications.cache.storage.ramendr.io
+  name: volumegroupreplications.replication.storage.openshift.io
 spec:
   conversion:
     strategy: Webhook

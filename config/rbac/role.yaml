@@ -6,7 +6,7 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - cache.storage.ramendr.io
+  - replication.storage.openshift.io
   resources:
   - volumegroupreplicationclasses
   verbs:
@@ -18,13 +18,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - cache.storage.ramendr.io
+  - replication.storage.openshift.io
   resources:
   - volumegroupreplicationclasses/finalizers
   verbs:
   - update
 - apiGroups:
-  - cache.storage.ramendr.io
+  - replication.storage.openshift.io
   resources:
   - volumegroupreplicationclasses/status
   verbs:
@@ -32,7 +32,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - cache.storage.ramendr.io
+  - replication.storage.openshift.io
   resources:
   - volumegroupreplications
   verbs:
@@ -44,13 +44,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - cache.storage.ramendr.io
+  - replication.storage.openshift.io
   resources:
   - volumegroupreplications/finalizers
   verbs:
   - update
 - apiGroups:
-  - cache.storage.ramendr.io
+  - replication.storage.openshift.io
   resources:
   - volumegroupreplications/status
   verbs:

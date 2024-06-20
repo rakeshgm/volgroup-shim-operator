@@ -36,7 +36,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	cachev1alpha1 "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 )
 
 const (
@@ -72,7 +72,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
 
-	err = cachev1alpha1.AddToScheme(scheme.Scheme)
+	err = volRep.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating a k8s client")

@@ -1,0 +1,8 @@
+---
+# yamllint disable rule:comments-indentation
+apiVersion: replication.storage.openshift.io/v1alpha1
+kind: VolumeReplicationClass
+metadata:
+  name: volumereplicationclass-sample
+spec:
+  # TODO(user): Add fields here

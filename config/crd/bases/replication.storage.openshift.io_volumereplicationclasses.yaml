@@ -5,21 +5,27 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
-  name: volumegroupreplicationclasses.cache.storage.ramendr.io
+  name: volumereplicationclasses.replication.storage.openshift.io
 spec:
-  group: cache.storage.ramendr.io
+  group: replication.storage.openshift.io
   names:
-    kind: VolumeGroupReplicationClass
-    listKind: VolumeGroupReplicationClassList
-    plural: volumegroupreplicationclasses
-    singular: volumegroupreplicationclass
-  scope: Namespaced
+    kind: VolumeReplicationClass
+    listKind: VolumeReplicationClassList
+    plural: volumereplicationclasses
+    shortNames:
+    - vrc
+    singular: volumereplicationclass
+  scope: Cluster
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provisioner
+      name: provisioner
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: VolumeGroupReplicationClass is the Schema for the volumegroupreplicationclasses
-          API
+        description: VolumeReplicationClass is the Schema for the volumereplicationclasses
+          API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -34,25 +40,37 @@ spec:
           metadata:
             type: object
           spec:
-            description: VolumeGroupReplicationClassSpec defines the desired state
-              of VolumeGroupReplicationClass
+            description: VolumeReplicationClassSpec specifies parameters that an underlying
+              storage system uses when creating a volume replica. A specific VolumeReplicationClass
+              is used by specifying its name in a VolumeReplication object.
             properties:
               parameters:
                 additionalProperties:
                   type: string
                 description: Parameters is a key-value map with storage provisioner
-                  specific configurations for
+                  specific configurations for creating volume replicas
                 type: object
+                x-kubernetes-validations:
+                - message: parameters are immutable
+                  rule: self == oldSelf
               provisioner:
                 description: Provisioner is the name of storage provisioner
                 type: string
+                x-kubernetes-validations:
+                - message: provisioner is immutable
+                  rule: self == oldSelf
             required:
             - provisioner
             type: object
+            x-kubernetes-validations:
+            - message: parameters are immutable
+              rule: has(self.parameters) == has(oldSelf.parameters)
           status:
-            description: VolumeGroupReplicationClassStatus defines the observed state
-              of VolumeGroupReplicationClass
+            description: VolumeReplicationClassStatus defines the observed state of
+              VolumeReplicationClass.
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

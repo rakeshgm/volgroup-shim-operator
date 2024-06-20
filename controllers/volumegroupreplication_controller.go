@@ -32,8 +32,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	volRep "github.com/csi-addons/kubernetes-csi-addons/apis/replication.storage/v1alpha1"
-	volGroupRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
+	volRep "github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1"
 )
 
 const storageProvisioner = "rook-ceph.rbd.csi.ceph.com"
@@ -46,9 +45,9 @@ type VolumeGroupReplicationReconciler struct {
 	Log       logr.Logger
 }
 
-//+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplications,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplications/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=cache.storage.ramendr.io,resources=volumegroupreplications/finalizers,verbs=update
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplications,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplications/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=replication.storage.openshift.io,resources=volumegroupreplications/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -64,9 +63,9 @@ type VGRInstance struct {
 	reconciler               *VolumeGroupReplicationReconciler
 	ctx                      context.Context
 	log                      logr.Logger
-	instance                 *volGroupRep.VolumeGroupReplication
-	savedInstanceStatus      volGroupRep.VolumeGroupReplicationStatus
-	volGroupReplicationClass *volGroupRep.VolumeGroupReplicationClass
+	instance                 *volRep.VolumeGroupReplication
+	savedInstanceStatus      volRep.VolumeGroupReplicationStatus
+	volGroupReplicationClass *volRep.VolumeGroupReplicationClass
 	volRepClass              *volRep.VolumeReplicationClass
 	volRepPVCs               []corev1.PersistentVolumeClaim
 	volReps                  []volRep.VolumeReplication
@@ -88,7 +87,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 		reconciler:     r,
 		ctx:            ctx,
 		log:            log,
-		instance:       &volGroupRep.VolumeGroupReplication{},
+		instance:       &volRep.VolumeGroupReplication{},
 		namespacedName: req.NamespacedName.Namespace,
 	}
 
@@ -108,7 +107,7 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 
 	// Get VolumeGroupReplicationClass
 	volGrouReplClass, err := r.getVolumeGroupReplicationClass(log, types.NamespacedName{
-		Name:      v.instance.Spec.VolumeGroupReplicationClass,
+		Name:      v.instance.Spec.VolumeGroupReplicationClassName,
 		Namespace: req.Namespace,
 	})
 	if err != nil {
@@ -215,15 +214,15 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 // SetupWithManager sets up the controller with the Manager.
 func (r *VolumeGroupReplicationReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&volGroupRep.VolumeGroupReplication{}).
+		For(&volRep.VolumeGroupReplication{}).
 		Owns(&volRep.VolumeReplication{}).
 		Complete(r)
 }
 
 func (r *VolumeGroupReplicationReconciler) updateVGRStatus(
-	instance *volGroupRep.VolumeGroupReplication,
+	instance *volRep.VolumeGroupReplication,
 	logger logr.Logger,
-	state volGroupRep.State,
+	state volRep.State,
 	message string,
 ) error {
 	instance.Status.State = state
@@ -241,8 +240,8 @@ func (r *VolumeGroupReplicationReconciler) updateVGRStatus(
 // VolumeGroupReplicationReconciler get volume replication class object from the subjected namespace and return the same.
 func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger logr.Logger,
 	req types.NamespacedName,
-) (*volGroupRep.VolumeGroupReplicationClass, error) {
-	vrcObj := &volGroupRep.VolumeGroupReplicationClass{}
+) (*volRep.VolumeGroupReplicationClass, error) {
+	vrcObj := &volRep.VolumeGroupReplicationClass{}
 
 	err := r.Client.Get(context.TODO(), req, vrcObj)
 	if err != nil {
@@ -259,10 +258,10 @@ func (r *VolumeGroupReplicationReconciler) getVolumeGroupReplicationClass(logger
 }
 
 func (r *VolumeGroupReplicationReconciler) listPVCs(
-	instance *volGroupRep.VolumeGroupReplication,
+	instance *volRep.VolumeGroupReplication,
 	logger logr.Logger,
 ) (*corev1.PersistentVolumeClaimList, error) {
-	pvcLabelSelector := instance.Spec.Selector
+	pvcLabelSelector := instance.Spec.Source.Selector
 
 	pvcSelector, err := metav1.LabelSelectorAsSelector(pvcLabelSelector)
 	if err != nil {
@@ -566,7 +565,7 @@ func (v *VGRInstance) updateVGRLastGroupSyncTime() {
 		}
 	}
 
-	v.instance.Status.LastGroupSyncTime = leastLastSyncTime
+	v.instance.Status.LastSyncTime = leastLastSyncTime
 }
 
 func (v *VGRInstance) updateVGRLastGroupSyncDuration() {
@@ -588,7 +587,7 @@ func (v *VGRInstance) updateVGRLastGroupSyncDuration() {
 		}
 	}
 
-	v.instance.Status.LastGroupSyncDuration = maxLastSyncDuration
+	v.instance.Status.LastSyncDuration = maxLastSyncDuration
 }
 
 func (v *VGRInstance) updateVGRLastGroupSyncBytes() {
@@ -609,32 +608,32 @@ func (v *VGRInstance) updateVGRLastGroupSyncBytes() {
 		}
 	}
 
-	v.instance.Status.LastGroupSyncBytes = totalLastSyncBytes
+	v.instance.Status.LastSyncBytes = totalLastSyncBytes
 }
 
-func setFailureCondition(instance *volGroupRep.VolumeGroupReplication) {
+func setFailureCondition(instance *volRep.VolumeGroupReplication) {
 	switch instance.Spec.ReplicationState {
-	case volGroupRep.Primary:
+	case volRep.Primary:
 		setFailedPromotionCondition(&instance.Status.Conditions, instance.Generation)
-	case volGroupRep.Secondary:
+	case volRep.Secondary:
 		setFailedDemotionCondition(&instance.Status.Conditions, instance.Generation)
 	}
 }
 
-func getGroupReplicationState(instance *volGroupRep.VolumeGroupReplication) volGroupRep.State {
+func getGroupReplicationState(instance *volRep.VolumeGroupReplication) volRep.State {
 	switch instance.Spec.ReplicationState {
-	case volGroupRep.Primary:
-		return volGroupRep.PrimaryState
-	case volGroupRep.Secondary:
-		return volGroupRep.SecondaryState
+	case volRep.Primary:
+		return volRep.PrimaryState
+	case volRep.Secondary:
+		return volRep.SecondaryState
 	}
 
-	return volGroupRep.UnknownState
+	return volRep.UnknownState
 }
 
-func getCurrentReplicationState(instance *volGroupRep.VolumeGroupReplication) volGroupRep.State {
+func getCurrentReplicationState(instance *volRep.VolumeGroupReplication) volRep.State {
 	if instance.Status.State == "" {
-		return volGroupRep.UnknownState
+		return volRep.UnknownState
 	}
 
 	return instance.Status.State

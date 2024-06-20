@@ -4,4 +4,4 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
-  name: volumegroupreplications.cache.storage.ramendr.io
+  name: volumegroupreplications.replication.storage.openshift.io

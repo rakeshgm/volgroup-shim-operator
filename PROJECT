@@ -12,7 +12,7 @@ resources:
     namespaced: true
   controller: true
   domain: storage.ramendr.io
-  group: cache
+  group: replication
   kind: VolumeGroupReplicationClass
   path: github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1
   version: v1alpha1
@@ -21,7 +21,7 @@ resources:
     namespaced: true
   controller: true
   domain: storage.ramendr.io
-  group: cache
+  group: replication
   kind: VolumeGroupReplication
   path: github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1
   version: v1alpha1

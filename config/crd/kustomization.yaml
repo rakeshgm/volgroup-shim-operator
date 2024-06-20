@@ -2,8 +2,11 @@
 # since it depends on service name and namespace that are out of this kustomize package.
 # It should be run by config/default
 resources:
-- bases/cache.storage.ramendr.io_volumegroupreplicationclasses.yaml
-- bases/cache.storage.ramendr.io_volumegroupreplications.yaml
+  - bases/replication.storage.openshift.io_volumereplications.yaml
+  - bases/replication.storage.openshift.io_volumereplicationclasses.yaml
+  - bases/replication.storage.openshift.io_volumegroupreplicationclasses.yaml
+  - bases/replication.storage.openshift.io_volumegroupreplications.yaml
+  - bases/replication.storage.openshift.io_volumegroupreplicationcontents.yaml
 #+kubebuilder:scaffold:crdkustomizeresource
 
 patchesStrategicMerge:

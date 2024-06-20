@@ -5,9 +5,9 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
-  name: volumegroupreplications.cache.storage.ramendr.io
+  name: volumegroupreplications.replication.storage.openshift.io
 spec:
-  group: cache.storage.ramendr.io
+  group: replication.storage.openshift.io
   names:
     kind: VolumeGroupReplication
     listKind: VolumeGroupReplicationList
@@ -36,69 +36,111 @@ spec:
           spec:
             description: VolumeGroupReplicationSpec defines the desired state of VolumeGroupReplication
             properties:
+              autoResync:
+                default: false
+                description: AutoResync represents the group to be auto resynced when
+                  ReplicationState is "secondary"
+                type: boolean
               replicationState:
-                description: Desired state of all volumes [primary or secondary] in
-                  this replication group; this value is propagated to children VolumeReplication
-                  CRs
+                description: ReplicationState represents the replication operation
+                  to be performed on the group. Supported operations are "primary",
+                  "secondary" and "resync"
                 enum:
                 - primary
                 - secondary
+                - resync
                 type: string
-              selector:
-                description: A label query over persistent volume claims to be grouped
-                  together for replication. This labelSelector will be used to match
-                  the label added to a PVC.
+              source:
+                description: Source specifies where a group replications will be created
+                  from. This field is immutable after creation. Required.
                 properties:
-                  matchExpressions:
-                    description: matchExpressions is a list of label selector requirements.
-                      The requirements are ANDed.
-                    items:
-                      description: A label selector requirement is a selector that
-                        contains values, a key, and an operator that relates the key
-                        and values.
-                      properties:
-                        key:
-                          description: key is the label key that the selector applies
-                            to.
+                  selector:
+                    description: Selector is a label query over persistent volume
+                      claims that are to be grouped together for replication.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: A label selector requirement is a selector
+                            that contains values, a key, and an operator that relates
+                            the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: operator represents a key's relationship
+                                to a set of values. Valid operators are In, NotIn,
+                                Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: values is an array of string values. If
+                                the operator is In or NotIn, the values array must
+                                be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced
+                                during a strategic merge patch.
+                              items:
+                                type: string
+                              type: array
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                      matchLabels:
+                        additionalProperties:
                           type: string
-                        operator:
-                          description: operator represents a key's relationship to
-                            a set of values. Valid operators are In, NotIn, Exists
-                            and DoesNotExist.
-                          type: string
-                        values:
-                          description: values is an array of string values. If the
-                            operator is In or NotIn, the values array must be non-empty.
-                            If the operator is Exists or DoesNotExist, the values
-                            array must be empty. This array is replaced during a strategic
-                            merge patch.
-                          items:
-                            type: string
-                          type: array
-                      required:
-                      - key
-                      - operator
-                      type: object
-                    type: array
-                  matchLabels:
-                    additionalProperties:
-                      type: string
-                    description: matchLabels is a map of {key,value} pairs. A single
-                      {key,value} in the matchLabels map is equivalent to an element
-                      of matchExpressions, whose key field is "key", the operator
-                      is "In", and the values array contains only "value". The requirements
-                      are ANDed.
+                        description: matchLabels is a map of {key,value} pairs. A
+                          single {key,value} in the matchLabels map is equivalent
+                          to an element of matchExpressions, whose key field is "key",
+                          the operator is "In", and the values array contains only
+                          "value". The requirements are ANDed.
+                        type: object
                     type: object
+                    x-kubernetes-map-type: atomic
+                    x-kubernetes-validations:
+                    - message: selector is immutable
+                      rule: self == oldSelf
                 type: object
-                x-kubernetes-map-type: atomic
-              volumeGroupReplicationClass:
-                description: VolumeGroupReplicationClass may be left nil to indicate
-                  that the default class will be used.
+                x-kubernetes-validations:
+                - message: source is immutable
+                  rule: self == oldSelf
+              volumeGroupReplicationClassName:
+                description: volumeGroupReplicationClassName is the volumeGroupReplicationClass
+                  name for this VolumeGroupReplication resource
                 type: string
+                x-kubernetes-validations:
+                - message: volumeGroupReplicationClassName is immutable
+                  rule: self == oldSelf
+              volumeGroupReplicationContentName:
+                description: Name of the VolumeGroupReplicationContent object created
+                  for this volumeGroupReplication
+                type: string
+                x-kubernetes-validations:
+                - message: volumeGroupReplicationContentName is immutable
+                  rule: self == oldSelf
+              volumeReplicationClassName:
+                description: volumeReplicationClassName is the volumeReplicationClass
+                  name for VolumeReplication object
+                type: string
+                x-kubernetes-validations:
+                - message: volumReplicationClassName is immutable
+                  rule: self == oldSelf
+              volumeReplicationName:
+                description: Name of the VolumeReplication object created for this
+                  volumeGroupReplication
+                type: string
+                x-kubernetes-validations:
+                - message: volumeReplicationName is immutable
+                  rule: self == oldSelf
             required:
+            - autoResync
             - replicationState
-            - selector
-            - volumeGroupReplicationClass
+            - source
+            - volumeGroupReplicationClassName
+            - volumeReplicationClassName
             type: object
           status:
             description: VolumeGroupReplicationStatus defines the observed state of
@@ -176,21 +218,15 @@ spec:
               lastCompletionTime:
                 format: date-time
                 type: string
-              lastGroupSyncBytes:
-                description: lastGroupSyncBytes is the total bytes transferred from
-                  the most recent successful synchronization of all PVCs
-                format: int64
-                type: integer
-              lastGroupSyncDuration:
-                description: lastGroupSyncDuration is the max time from all the successful
-                  synced PVCs
-                type: string
-              lastGroupSyncTime:
-                description: lastGroupSyncTime is the time of the most recent successful
-                  synchronization of all PVCs
+              lastStartTime:
                 format: date-time
                 type: string
-              lastStartTime:
+              lastSyncBytes:
+                format: int64
+                type: integer
+              lastSyncDuration:
+                type: string
+              lastSyncTime:
                 format: date-time
                 type: string
               message:
@@ -201,6 +237,7 @@ spec:
                 format: int64
                 type: integer
               state:
+                description: State captures the latest state of the replication operation.
                 type: string
             type: object
         type: object

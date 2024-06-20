@@ -1,8 +1,0 @@
-apiVersion: cache.storage.ramendr.io/v1alpha1
-kind: VolumeGroupReplicationClass
-metadata:
-  name: volumegroupreplicationclass-sample
-spec:
-  provisioner: provisioner-sample
-  parameters:
-    schedulingInterval: 1m

@@ -3,7 +3,6 @@ module github.com/rakeshgm/volgroup-shim-operator
 go 1.18
 
 require (
-	github.com/csi-addons/kubernetes-csi-addons v0.8.0
 	github.com/go-logr/logr v1.3.0
 	github.com/onsi/ginkgo/v2 v2.13.0
 	github.com/onsi/gomega v1.30.0
