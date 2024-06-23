@@ -1,4 +1,4 @@
-domain: storage.ramendr.io
+domain: openshift.io
 layout:
 - go.kubebuilder.io/v3
 plugins:
@@ -11,8 +11,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: storage.ramendr.io
-  group: replication
+  domain: openshift.io
+  group: replication.storage
   kind: VolumeGroupReplicationClass
   path: github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1
   version: v1alpha1
@@ -20,8 +20,8 @@ resources:
     crdVersion: v1
     namespaced: true
   controller: true
-  domain: storage.ramendr.io
-  group: replication
+  domain: openshift.io
+  group: replication.storage
   kind: VolumeGroupReplication
   path: github.com/rakeshgm/volgroup-shim-operator/api/v1alpha1
   version: v1alpha1
